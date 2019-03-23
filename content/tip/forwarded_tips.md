@@ -28,7 +28,7 @@ local> ssh -A -t userA@serverA ssh -A -t userB@serverB
 local> ssh -A -t server1 ssh -A -t server2 ssh -A server3
 ```
 
-来源： https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co
+来源： [https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co](https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co)
 
 
 ## 通过跳板机 SCP 传输文件
@@ -46,7 +46,7 @@ local> scp -oProxyJump=A thefile B:destination
 local> scp -o ProxyCommand="ssh -W %h:%p userA@serverA" userB@serverB:/<remotePath> <localpath>
 ```
 
-来源： https://superuser.com/questions/276533/scp-files-via-intermediate-host
+来源：[https://superuser.com/questions/276533/scp-files-via-intermediate-host](https://superuser.com/questions/276533/scp-files-via-intermediate-host)
 
 ## 本地通过多个跳板机连接 MySQL
 
@@ -72,7 +72,7 @@ SSH Key: ssh-password-of-serverB
 SSH Port: 1234
 ```
 
-来源： https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts
+来源：[https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts](https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts)
 
 ## 本地通过跳板机连接 Redis
 
@@ -89,7 +89,7 @@ ssh -N -L 9999:localhost:6379 -p 远程ssh端口 [remoteuser]@[remotehost]
 local> redis-cli -p 9999
 ```
 
-来源： http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/
+来源：[http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/](http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/)
 
 ## 远程主机网络抓包
 

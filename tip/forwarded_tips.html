@@ -1,0 +1,123 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <link rel="Stylesheet" type="text/css" href="/static/css/style.css">
+    <link rel="Stylesheet" type="text/css" href="/static/css/tango.css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="alternate" type="application/atom+xml" href="atom.xml" title="Atom feed">
+    <title>中转技巧集合 - hmgle 的个人 Wiki</title>
+    <meta name="keywords" content=""/>
+    <meta name="description" content=""/>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  </head>
+
+  <body>
+    <div id="container">
+      
+<div id="header">
+  <div class="post-nav"><a href="/">Home</a>&nbsp;&#187;&nbsp;<a href="/#tip">tip</a>&nbsp;&#187;&nbsp;中转技巧集合
+    <span class="updated">Updated&nbsp;
+      2019-03-23 19:00
+    </span></div>
+</div>
+<div class="clearfix"></div>
+
+<div class="page_title">中转技巧集合</div>
+
+  <div class="toc"><span class="toctitle">Table of Contents</span><ul>
+<li><a href="#ssh">通过多台跳板机 SSH 登录</a></li>
+<li><a href="#scp">通过跳板机 SCP 传输文件</a></li>
+<li><a href="#mysql">本地通过多个跳板机连接 MySQL</a></li>
+<li><a href="#redis">本地通过跳板机连接 Redis</a></li>
+<li><a href="#_1">远程主机网络抓包</a></li>
+</ul>
+</div>
+<h2 id="ssh">通过多台跳板机 SSH 登录</h2>
+<p>假如需要借助 SSH 跳板机 <code>A</code> 才能登录服务器 <code>B</code>，即：</p>
+<div class="hlcode"><pre><span class="go">local&gt; ssh userA@serverA</span>
+<span class="go">serverA&gt; ssh userB@serverB</span>
+<span class="go">serverB&gt;</span>
+</pre></div>
+
+
+<p>那么可以在本地通过 ssh 的正向代理（forwarding）选项，运行下面命令直接登录服务器 B：</p>
+<div class="hlcode"><pre><span class="go">local&gt; ssh -A -t userA@serverA ssh -A -t userB@serverB</span>
+</pre></div>
+
+
+<p>如果有多台跳板机也一样：</p>
+<div class="hlcode"><pre><span class="go">local&gt; ssh -A -t server1 ssh -A -t server2 ssh -A server3</span>
+</pre></div>
+
+
+<p>来源： https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co</p>
+<h2 id="scp">通过跳板机 SCP 传输文件</h2>
+<p>如果需要经过跳板机 <code>A</code> 才能 SSH 服务器 <code>B</code>，那么在本地可以只运行一次命令直接传输文件到 <code>B</code>：</p>
+<div class="hlcode"><pre><span class="gp">#</span> OpenSSH 7.3 以上
+<span class="go">local&gt; scp -oProxyJump=A thefile B:destination</span>
+</pre></div>
+
+
+<p>或：</p>
+<div class="hlcode"><pre><span class="go">local&gt; scp -o ProxyCommand=&quot;ssh -W %h:%p userA@serverA&quot; userB@serverB:/&lt;remotePath&gt; &lt;localpath&gt;</span>
+</pre></div>
+
+
+<p>来源： https://superuser.com/questions/276533/scp-files-via-intermediate-host</p>
+<h2 id="mysql">本地通过多个跳板机连接 MySQL</h2>
+<p>如果本地需要通过跳板机 <code>A</code> ssh 连接跳板机 <code>B</code> 后才能连上服务器 <code>C</code> 上的 MySQL（经过两台跳板机），<br />
+那么本地的 <code>Sequel Pro</code> 客户端可以这样连上这个 MySQL 服务：</p>
+<div class="hlcode"><pre><span class="gp">#</span> 先用 ssh 转发到本地 1234 端口：
+<span class="go">local&gt; ssh userA@serverA -L 1234:serverB:22</span>
+</pre></div>
+
+
+<p>再用 <code>Sequel Pro</code> 通过 ssh 连接 MySQL，<code>Sequel Pro</code> ssh 配置如下：</p>
+<div class="hlcode"><pre><span class="n">MySQL</span> <span class="n">Host</span><span class="o">:</span> <span class="n">serverC</span>
+<span class="nl">Username:</span> <span class="n">db_user_name</span>
+<span class="nl">Password:</span> <span class="n">db_password</span>
+<span class="nl">Database:</span> <span class="n">db_name</span>
+<span class="nl">Port:</span> <span class="mi">3306</span>
+
+<span class="n">SSH</span> <span class="n">Host</span><span class="o">:</span> <span class="n">localhost</span>
+<span class="n">SSH</span> <span class="n">User</span><span class="o">:</span> <span class="n">ssh</span><span class="o">-</span><span class="n">user</span><span class="o">-</span><span class="n">serverB</span>
+<span class="n">SSH</span> <span class="n">Key</span><span class="o">:</span> <span class="n">ssh</span><span class="o">-</span><span class="n">password</span><span class="o">-</span><span class="n">of</span><span class="o">-</span><span class="n">serverB</span>
+<span class="n">SSH</span> <span class="n">Port</span><span class="o">:</span> <span class="mi">1234</span>
+</pre></div>
+
+
+<p>来源： https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts</p>
+<h2 id="redis">本地通过跳板机连接 Redis</h2>
+<div class="hlcode"><pre><span class="n">ssh</span> <span class="o">-</span><span class="n">L</span> <span class="mi">9999</span><span class="o">:</span><span class="n">localhost</span><span class="o">:</span><span class="mi">6379</span> <span class="o">-</span><span class="n">p</span> <span class="err">远程</span><span class="n">ssh</span><span class="err">端口</span> <span class="p">[</span><span class="n">remoteuser</span><span class="p">]</span><span class="err">@</span><span class="p">[</span><span class="n">remotehost</span><span class="p">]</span>
+<span class="cp"># 或</span>
+<span class="n">ssh</span> <span class="o">-</span><span class="n">N</span> <span class="o">-</span><span class="n">L</span> <span class="mi">9999</span><span class="o">:</span><span class="n">localhost</span><span class="o">:</span><span class="mi">6379</span> <span class="o">-</span><span class="n">p</span> <span class="err">远程</span><span class="n">ssh</span><span class="err">端口</span> <span class="p">[</span><span class="n">remoteuser</span><span class="p">]</span><span class="err">@</span><span class="p">[</span><span class="n">remotehost</span><span class="p">]</span>
+<span class="cp"># -N 表示不执行远程命令，man ssh</span>
+</pre></div>
+
+
+<p>然后：</p>
+<div class="hlcode"><pre><span class="n">local</span><span class="o">&gt;</span> <span class="n">redis</span><span class="o">-</span><span class="n">cli</span> <span class="o">-</span><span class="n">p</span> <span class="mi">9999</span>
+</pre></div>
+
+
+<p>来源： http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/</p>
+<h2 id="_1">远程主机网络抓包</h2>
+<p>在分析网络协议时，常常需要借助 wireshark 等抓包工具捕获、显示网络数据。但 wireshark 依赖图形界面系统，我们一般不具备直接在远程主机运行 wireshark 的条件，所以要捕获远程主机的网络包时，就需要在远程主机运行 tcpdump 这个命令行工具了。但 tcpdump 显示的结果没有 wireshark 直观，我们可以结合两个工具，实时地通过本地的 wireshark 显示远程主机 tcpdump 捕获的网络数据。</p>
+<p>以捕获远程主机 serverA "eth0" 网卡的 TCP 2001 端口网络数据，并实时显示到本地的 wireshark 为例:</p>
+<div class="hlcode"><pre><span class="n">ssh</span> <span class="n">userA</span><span class="err">@</span><span class="n">serverA</span> <span class="n">tcpdump</span> <span class="o">-</span><span class="n">U</span> <span class="o">-</span><span class="n">s0</span> <span class="o">-</span><span class="n">w</span> <span class="o">-</span> <span class="o">-</span><span class="n">i</span> <span class="n">eth0</span> <span class="err">&#39;</span><span class="n">port</span> <span class="mi">2015</span><span class="err">&#39;</span> <span class="o">|</span> <span class="n">wireshark</span> <span class="o">-</span><span class="n">k</span> <span class="o">-</span><span class="n">i</span> <span class="o">-</span>
+</pre></div>
+
+
+<p><code>-U</code> 表示禁用文件缓冲，<code>-s0</code> 表示不截断 tcpdump 的每行数据结果，<code>-w -</code> 表示将结果输出到终端，对应于 wireshark 的 <code>-i -</code> 选项表示从终端读入数据。</p>
+<p>如果不需要在 wireshark 实时显示数据，也可以通过 tcpdump 输出到文件，再下载回本地，使用 wireshark 分析该文件。</p>
+    </div>
+    <div id="footer">
+      <span>
+        <p>Copyright © 2019 hmgle.
+        Powered by <a href="http://simiki.org/" target="_blank">Simiki</a>.</p>
+        <p>Site Generated 2019-03-24 00:36:43</p>
+      </span>
+    </div>
+  </body>
+</html>

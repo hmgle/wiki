@@ -28,7 +28,7 @@ local> ssh -A -t userA@serverA ssh -A -t userB@serverB
 local> ssh -A -t server1 ssh -A -t server2 ssh -A server3
 ```
 
-来源： [https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co](https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co)
+来源：[https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co](https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co)
 
 
 ## 通过跳板机 SCP 传输文件

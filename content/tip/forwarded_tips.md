@@ -1,5 +1,5 @@
 ---
-title: "中转技巧集合"
+title: "中转技巧荟萃"
 layout: page
 date: 2019-03-23 19:00
 ---
@@ -74,12 +74,12 @@ SSH Port: 1234
 
 来源：[https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts](https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts)
 
-## 本地通过跳板机连接 Redis
+## 本地通过跳板机 A 连接 Redis
 
-```
-ssh -L 9999:localhost:6379 -p 远程ssh端口 [remoteuser]@[remotehost]
+```console
+local> ssh -L 9999:redis-host:6379 -p 远程ssh端口 userA@serverA
 # 或
-ssh -N -L 9999:localhost:6379 -p 远程ssh端口 [remoteuser]@[remotehost]
+local> ssh -N -L 9999:redis-host:6379 -p 远程ssh端口 userA@serverA
 # -N 表示不执行远程命令，man ssh
 ```
 
@@ -98,7 +98,7 @@ local> redis-cli -p 9999
 以捕获远程主机 serverA "eth0" 网卡的 TCP 2001 端口网络数据，并实时显示到本地的 wireshark 为例:
 
 ```
-ssh userA@serverA tcpdump -U -s0 -w - -i eth0 'port 2015' | wireshark -k -i -
+local> ssh userA@serverA tcpdump -U -s0 -w - -i eth0 'port 2001' | wireshark -k -i -
 ```
 
 `-U` 表示禁用文件缓冲，`-s0` 表示不截断 tcpdump 的每行数据结果，`-w -` 表示将结果输出到终端，对应于 wireshark 的 `-i -` 选项表示从终端读入数据。

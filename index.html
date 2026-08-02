@@ -17,39 +17,42 @@
       
 <div class="title">hmgle 的个人 Wiki</div>
 
-<div class="index">    
-    <div class="category">
-      <h2 id="search">Search
-      </h2>
-      <div class="category_pages">
-        <ul>
-          <li class="pagelist">  
-              <a href="./search/sphinx.html">Sphinx (search engine) 使用笔记</a>
-          </li>
-        </ul>
-      </div> <!-- end category_pages -->
-    </div> <!-- end category -->
-    <div class="clearfix"></div>  
-    <div class="category">
-      <h2 id="tip">Tip
-      </h2>
-      <div class="category_pages">
-        <ul>
-          <li class="pagelist">  
-              <a href="./tip/forwarded_tips.html">网络流量中转技巧荟萃</a>
-          </li>
-        </ul>
-      </div> <!-- end category_pages -->
-    </div> <!-- end category -->
-    <div class="clearfix"></div>
+<div class="index">  
+    <h1>Pages</h1>
+<section class="catalog-category">
+<h2>search</h2>
+<ul>
+<li><a href="/wiki/search/sphinx.html">Sphinx (search engine) 使用笔记</a><span class="catalog-summary"> — Sphinx 简介 部分同类开源产品 基本原理 部分功能 中文支持 API 协议 请求 Sphinx 简介 Sphinx 是一个轻量级的全文检索引擎。 部分同类开源产品 Elasticsearch 基于 Lucene 的开源搜索引擎，支持 RESTful API。 Redis-S…</span></li>
+</ul>
+</section>
+<section class="catalog-category">
+<h2>tip</h2>
+<ul>
+<li><a href="/wiki/tip/forwarded_tips.html">网络流量中转技巧荟萃</a><span class="catalog-summary"> — 先判断转发方向 通过一台或多台跳板机登录 ProxyJump：推荐方式 旧版本的 ProxyCommand 嵌套 SSH 通过跳板机传输文件 SCP 和 SFTP Rsync 本机访问远程 TCP 服务：-L 通用形式 经过多台跳板机连接 MySQL 通过跳板机连接 Redis…</span></li>
+</ul>
+</section>
 </div>
     </div>
     <div id="footer">
       <span>
-        <p>Copyright © 2019 hmgle.
+        <p>Copyright © 2026 hmgle.
         Powered by <a href="http://simiki.org/" target="_blank">Simiki</a>.</p>
-        <p>Site Generated 2019-03-27 22:36:38</p>
+        <p>Site Generated 2026-08-02 09:51:04</p>
       </span>
     </div>
+
+    
+<script>
+  var list_wrappers = document.getElementsByClassName('list_wrapper')
+  for (var i = 0, len = list_wrappers.length; i < len; i++) {
+    var list_wrapper = list_wrappers[i];
+    var coll_name = list_wrapper.getElementsByClassName('coll_name')[0];
+    var coll_list = list_wrapper.getElementsByClassName('coll_list')[0];
+    var width = coll_name.clientWidth + 3;
+    // http://stackoverflow.com/a/10118190/1276501
+    coll_list.setAttribute("style","margin-left: " + width + "px");
+    coll_list.style.marginLeft = width + "px";
+  }
+</script>
   </body>
 </html>

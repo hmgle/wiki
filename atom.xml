@@ -1,0 +1,19 @@
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>hmgle 的个人 Wiki</title>
+  <id>/wiki</id>
+  <updated>2026-08-02T00:00:00+00:00</updated>
+  <entry>
+    <title>网络流量中转技巧荟萃</title>
+    <id>/wiki/tip/forwarded_tips.html</id>
+    <link href="/wiki/tip/forwarded_tips.html" />
+    <updated>2026-08-02T00:00:00+00:00</updated>
+    <summary type="html">先判断转发方向 通过一台或多台跳板机登录 ProxyJump：推荐方式 旧版本的 ProxyCommand 嵌套 SSH 通过跳板机传输文件 SCP 和 SFTP Rsync 本机访问远程 TCP 服务：-L 通用形式 经过多台跳板机连接 MySQL 通过跳板机连接 Redis 临时建立 SOCKS 代理：-D 远程主机网络抓包 通过公网主机反向访问内网主机：-R 原理和拓扑 前置条件 B 开启…</summary>
+  </entry>
+  <entry>
+    <title>Sphinx (search engine) 使用笔记</title>
+    <id>/wiki/search/sphinx.html</id>
+    <link href="/wiki/search/sphinx.html" />
+    <updated>2016-11-19T19:00:00+00:00</updated>
+    <summary type="html">Sphinx 简介 部分同类开源产品 基本原理 部分功能 中文支持 API 协议 请求 Sphinx 简介 Sphinx 是一个轻量级的全文检索引擎。 部分同类开源产品 Elasticsearch 基于 Lucene 的开源搜索引擎，支持 RESTful API。 Redis-Search 基于 Redis 的高效搜索组件。 Searchdaimon ES 一个针对公司数据和网站的搜索引擎。 另外…</summary>
+  </entry>
+</feed>

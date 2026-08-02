@@ -17,130 +17,906 @@
       
 <div id="header">
   <div class="post-nav"><a href="/wiki/">Home</a>&nbsp;&#187;&nbsp;<a href="/wiki/#tip">tip</a>&nbsp;&#187;&nbsp;网络流量中转技巧荟萃
-    <span class="updated">Updated&nbsp;
-      2019-03-23 19:00
+    <span class="updated">Page Updated&nbsp;
+      2026-08-02
+      
     </span></div>
 </div>
 <div class="clearfix"></div>
 
 <div class="page_title">网络流量中转技巧荟萃</div>
 
-  <div class="toc"><span class="toctitle">Table of Contents</span><ul>
-<li><a href="#ssh">通过多台跳板机 SSH 登录</a></li>
-<li><a href="#scp">通过跳板机 SCP 传输文件</a></li>
-<li><a href="#mysql">本机通过多个跳板机连接 MySQL</a></li>
-<li><a href="#a-redis">本机通过跳板机 A 连接 Redis</a></li>
-<li><a href="#_1">远程主机网络抓包</a></li>
+  <div class="toc">
+<ul>
+<li><a href="#_1">先判断转发方向</a></li>
+<li><a href="#_2">通过一台或多台跳板机登录</a><ul>
+<li><a href="#proxyjump">ProxyJump：推荐方式</a></li>
+<li><a href="#proxycommand">旧版本的 ProxyCommand</a></li>
+<li><a href="#ssh">嵌套 SSH</a></li>
+</ul>
+</li>
+<li><a href="#_3">通过跳板机传输文件</a><ul>
+<li><a href="#scp-sftp">SCP 和 SFTP</a></li>
+<li><a href="#rsync">Rsync</a></li>
+</ul>
+</li>
+<li><a href="#tcp-l">本机访问远程 TCP 服务：-L</a><ul>
+<li><a href="#_4">通用形式</a></li>
+<li><a href="#mysql">经过多台跳板机连接 MySQL</a></li>
+<li><a href="#redis">通过跳板机连接 Redis</a></li>
+</ul>
+</li>
+<li><a href="#socks-d">临时建立 SOCKS 代理：-D</a></li>
+<li><a href="#_5">远程主机网络抓包</a></li>
+<li><a href="#-r">通过公网主机反向访问内网主机：-R</a><ul>
+<li><a href="#_6">原理和拓扑</a></li>
+<li><a href="#_7">前置条件</a></li>
+<li><a href="#b-ssh">B 开启 SSH 服务</a></li>
+<li><a href="#a-key">A 创建隧道专用用户和 key</a></li>
+<li><a href="#key-a-sshd">限制隧道 key 和 A 的 sshd</a></li>
+<li><a href="#b">B 手动建立和验证隧道</a></li>
+<li><a href="#systemd">使用 systemd 自动重连</a></li>
+</ul>
+</li>
+<li><a href="#macos-launchd">macOS 没有管理员权限时使用 launchd</a><ul>
+<li><a href="#sshd">用户态 sshd</a></li>
+<li><a href="#launchd-agent">两个 launchd agent</a></li>
+</ul>
+</li>
+<li><a href="#_8">局域网优先、反向隧道兜底</a><ul>
+<li><a href="#ssh-hostkeyalias">SSH 配置和 HostKeyAlias</a></li>
+<li><a href="#mdns-ip">使用 mDNS 应对局域网 IP 变化</a></li>
+<li><a href="#mihomo-tunfake-ip">mihomo TUN/Fake-IP 下按路由选路</a></li>
+<li><a href="#_9">扩展到多台内网主机</a></li>
+</ul>
+</li>
+<li><a href="#_10">安全和暴露面</a></li>
+<li><a href="#_11">常见问题排查</a><ul>
+<li><a href="#remote-port-forwarding-failed">remote port forwarding failed</a></li>
+<li><a href="#connection-refused">外部连接 connection refused</a></li>
+<li><a href="#_12">外部连接卡住</a></li>
+<li><a href="#_13">网络恢复后没有自动重连</a></li>
+<li><a href="#a">A 的反向端口意外暴露</a></li>
+<li><a href="#connection-closed-by-unknown-port-65535">Connection closed by UNKNOWN port 65535</a></li>
+<li><a href="#macos">macOS 登录后中文乱码</a></li>
+<li><a href="#_14">打开调试日志</a></li>
+</ul>
+</li>
+<li><a href="#_15">停止和清理</a></li>
+<li><a href="#_16">参考</a></li>
 </ul>
 </div>
-<h2 id="ssh">通过多台跳板机 SSH 登录</h2>
-<p>假如需要借助 SSH 跳板机 <code>A</code> 才能登录服务器 <code>B</code>，即：</p>
-<div class="hlcode"><pre><span class="go">local&gt; ssh userA@serverA</span>
-<span class="go">serverA&gt; ssh userB@serverB</span>
-<span class="go">serverB&gt;</span>
-</pre></div>
+<p>本文整理 OpenSSH 的跳板、端口转发、反向隧道和远程抓包用法。示例中的主机名、用户名、端口和路径都是占位符，请按实际环境替换。</p>
+<p>本文统一使用下面的角色：</p>
+<div class="codehilite"><pre><span></span><code>A / a.example.com    有公网 IP 的 SSH 中转机
+B / b.example        内网主机，不能被公网直接访问
+C                     外部客户端
+</code></pre></div>
 
+<h2 id="_1">先判断转发方向</h2>
+<p>SSH 的选项名称容易混淆。先判断“监听端口出现在哪里”，再选择命令：</p>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>监听端口</th>
+<th>连接目标</th>
+<th>常见用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-L</code></td>
+<td>SSH 客户端本机</td>
+<td>SSH 服务端能访问的地址</td>
+<td>本机访问远程数据库、Redis、HTTP</td>
+</tr>
+<tr>
+<td><code>-R</code></td>
+<td>SSH 服务端本机</td>
+<td>SSH 客户端能访问的地址</td>
+<td>内网主机主动连公网机，建立反向 SSH</td>
+</tr>
+<tr>
+<td><code>-D</code></td>
+<td>SSH 客户端本机</td>
+<td>由 SOCKS 客户端动态指定</td>
+<td>临时 SOCKS 代理</td>
+</tr>
+<tr>
+<td><code>-J</code></td>
+<td>不额外监听端口</td>
+<td>通过跳板机连接最终主机</td>
+<td>登录、SCP、SFTP、端口转发</td>
+</tr>
+<tr>
+<td><code>-W</code></td>
+<td>不额外监听端口</td>
+<td>把标准输入输出连接到 <code>host:port</code></td>
+<td><code>ProxyCommand</code> 的底层实现</td>
+</tr>
+</tbody>
+</table>
+<p>图示如下：</p>
+<div class="codehilite"><pre><span></span><code>-L: C:13306  -&gt;  SSH server -&gt; serverC:3306
+-R: A:2222   -&gt;  B:127.0.0.1:22
+-D: C:1080   -&gt;  由 SOCKS 客户端指定的目标
+</code></pre></div>
 
-<p>那么可以在本机通过 ssh 的正向代理（forwarding）选项，运行下面命令直接登录服务器 B：</p>
-<div class="hlcode"><pre><span class="go">local&gt; ssh -A -t userA@serverA ssh -A -t userB@serverB</span>
-</pre></div>
+<p>建议在纯转发命令中使用下面这些选项：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -o ExitOnForwardFailure=yes ...</span>
+</code></pre></div>
 
+<ul>
+<li><code>-N</code>：不执行远程命令，只建立转发。</li>
+<li><code>-T</code>：不分配伪终端。</li>
+<li><code>ExitOnForwardFailure=yes</code>：转发监听失败时立即退出，避免脚本或 systemd 把“SSH 已连接但转发没建立”误判为成功。</li>
+<li><code>ServerAliveInterval</code>、<code>ServerAliveCountMax</code>：检测失联并让自动重启机制接管。</li>
+</ul>
+<p><code>-A</code> 是 SSH agent forwarding（代理转发），不是端口转发。只有确实需要让跳板机代用本机 SSH agent 时才启用；跳板机上的管理员或被入侵的进程可能利用转发中的 agent 请求签名。</p>
+<h2 id="_2">通过一台或多台跳板机登录</h2>
+<h3 id="proxyjump"><code>ProxyJump</code>：推荐方式</h3>
+<p>OpenSSH 7.3 及以上可以直接使用 <code>-J</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -J userA@serverA userB@serverB</span>
+</code></pre></div>
 
-<p>如果有多台跳板机也一样：</p>
-<div class="hlcode"><pre><span class="go">local&gt; ssh -A -t server1 ssh -A -t server2 ssh -A server3</span>
-</pre></div>
+<p>多台跳板机用逗号分隔：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -J user1@server1,user2@server2 user3@server3</span>
+</code></pre></div>
 
+<p>也可以写入 <code>~/.ssh/config</code>：</p>
+<div class="codehilite"><pre><span></span><code>Host server-a
+    HostName a.example.com
+    User your_a_user
 
-<p>来源：<a href="https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co">https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co</a></p>
-<h2 id="scp">通过跳板机 SCP 传输文件</h2>
-<p>如果需要经过跳板机 <code>A</code> 才能 SSH 服务器 <code>B</code>，那么在本机可以只运行一次命令直接传输文件到 <code>B</code>：</p>
-<div class="hlcode"><pre><span class="gp">#</span> OpenSSH 7.3 以上
-<span class="go">local&gt; scp -oProxyJump=A thefile B:destination</span>
-</pre></div>
+Host server-b
+    HostName b.example.com
+    User b_user
+    ProxyJump server-a
+</code></pre></div>
 
+<p>以后直接运行：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh server-b</span>
+</code></pre></div>
 
-<p>或：</p>
-<div class="hlcode"><pre><span class="go">local&gt; scp -o ProxyCommand=&quot;ssh -W %h:%p userA@serverA&quot; userB@serverB:/&lt;remotePath&gt; &lt;localpath&gt;</span>
-</pre></div>
+<p>这种方式中，SSH 会在本机建立到跳板机的连接，并通过跳板机的 <code>direct-tcpip</code> 通道连接最终主机；跳板机不需要保存最终主机的私钥。</p>
+<h3 id="proxycommand">旧版本的 <code>ProxyCommand</code></h3>
+<p>不支持 <code>-J</code> 时可以使用 <code>-W</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -o &#39;ProxyCommand=ssh -W %h:%p userA@serverA&#39; userB@serverB</span>
+</code></pre></div>
 
+<p>等价的配置写法：</p>
+<div class="codehilite"><pre><span></span><code>Host server-b
+    HostName b.example.com
+    User b_user
+    ProxyCommand ssh -W %h:%p server-a
+</code></pre></div>
 
-<p>来源：<a href="https://superuser.com/questions/276533/scp-files-via-intermediate-host">https://superuser.com/questions/276533/scp-files-via-intermediate-host</a></p>
-<h2 id="mysql">本机通过多个跳板机连接 MySQL</h2>
-<p>如果本机需要通过跳板机 <code>A</code> ssh 连接跳板机 <code>B</code> 后才能连上服务器 <code>C</code> 上的 MySQL（经过两台跳板机），<br />
-那么本机的 <code>Sequel Pro</code> 客户端可以这样连上这个 MySQL 服务：</p>
-<div class="hlcode"><pre><span class="gp">#</span> 先用 ssh 转发到本机 1234 端口：
-<span class="go">local&gt; ssh userA@serverA -L 1234:serverB:22</span>
-</pre></div>
+<h3 id="ssh">嵌套 SSH</h3>
+<p>也可以在 A 上再启动一次 SSH：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -t userA@serverA ssh -t userB@serverB</span>
+</code></pre></div>
 
+<p>如果 B 的认证需要使用 C 本机的 agent，才加上 <code>-A</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -A -t userA@serverA ssh -t userB@serverB</span>
+</code></pre></div>
 
-<p>再用 <code>Sequel Pro</code> 通过 ssh 连接 MySQL，<code>Sequel Pro</code> ssh 配置如下：</p>
-<div class="hlcode"><pre><span class="n">MySQL</span> <span class="n">Host</span><span class="o">:</span> <span class="n">serverC</span>
-<span class="nl">Username:</span> <span class="n">db_user_name</span>
-<span class="nl">Password:</span> <span class="n">db_password</span>
-<span class="nl">Database:</span> <span class="n">db_name</span>
-<span class="nl">Port:</span> <span class="mi">3306</span>
+<p>这会把 agent 暴露给 A，安全边界比 <code>ProxyJump</code> 更宽。更推荐把最终主机的 key 保存在 C，或者使用 <code>ProxyJump</code>。</p>
+<h2 id="_3">通过跳板机传输文件</h2>
+<h3 id="scp-sftp">SCP 和 SFTP</h3>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; scp -J userA@serverA ./thefile userB@serverB:/destination/</span>
+<span class="go">C&gt; sftp -J userA@serverA userB@serverB</span>
+</code></pre></div>
 
-<span class="n">SSH</span> <span class="n">Host</span><span class="o">:</span> <span class="n">localhost</span>
-<span class="n">SSH</span> <span class="n">User</span><span class="o">:</span> <span class="n">ssh</span><span class="o">-</span><span class="n">user</span><span class="o">-</span><span class="n">serverB</span>
-<span class="n">SSH</span> <span class="n">Key</span><span class="o">:</span> <span class="n">ssh</span><span class="o">-</span><span class="n">password</span><span class="o">-</span><span class="n">of</span><span class="o">-</span><span class="n">serverB</span>
-<span class="n">SSH</span> <span class="n">Port</span><span class="o">:</span> <span class="mi">1234</span>
-</pre></div>
+<p>多台跳板机的写法与 <code>ssh</code> 相同：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; scp -J user1@server1,user2@server2 ./thefile user3@server3:/destination/</span>
+</code></pre></div>
 
+<p>不支持 <code>-J</code> 的旧版本可以写成：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; scp -o &#39;ProxyCommand=ssh -W %h:%p userA@serverA&#39; \</span>
+<span class="go">    ./thefile userB@serverB:/destination/</span>
+</code></pre></div>
 
-<p>来源：<a href="https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts">https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts</a></p>
-<h2 id="a-redis">本机通过跳板机 A 连接 Redis</h2>
-<div class="hlcode"><pre><span class="go">local&gt; ssh -L 9999:redis-host:6379 -p 远程ssh端口 userA@serverA</span>
-<span class="gp">#</span> 或
-<span class="go">local&gt; ssh -N -L 9999:redis-host:6379 -p 远程ssh端口 userA@serverA</span>
-<span class="gp">#</span> -N 表示不执行远程命令，man ssh
-</pre></div>
+<h3 id="rsync">Rsync</h3>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; rsync -av -e &#39;ssh -J userA@serverA&#39; ./local-dir/ \</span>
+<span class="go">    userB@serverB:/destination/</span>
+</code></pre></div>
 
+<p>大批量文件传输时，<code>rsync</code> 通常比反复执行 <code>scp</code> 更适合；先在 SSH 配置中定义跳板机别名，可以让 <code>rsync</code> 命令更短。</p>
+<h2 id="tcp-l">本机访问远程 TCP 服务：<code>-L</code></h2>
+<h3 id="_4">通用形式</h3>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -o ExitOnForwardFailure=yes \</span>
+<span class="go">    -L 127.0.0.1:local_port:remote_host:remote_port \</span>
+<span class="go">    userA@serverA</span>
+</code></pre></div>
 
-<p>然后：</p>
-<div class="hlcode"><pre><span class="n">local</span><span class="o">&gt;</span> <span class="n">redis</span><span class="o">-</span><span class="n">cli</span> <span class="o">-</span><span class="n">p</span> <span class="mi">9999</span>
-</pre></div>
+<p>含义是：在 C 的 <code>127.0.0.1:local_port</code> 监听，连接经过 SSH 后，由 A 访问 <code>remote_host:remote_port</code>。</p>
+<p><code>remote_host</code> 是从 SSH 服务端所在主机的网络视角解析和连接的，不是从 C 解析。例如 <code>redis-host</code> 是 A 能访问的内网名称时，C 无需解析它。</p>
+<h3 id="mysql">经过多台跳板机连接 MySQL</h3>
+<p>假设数据库主机 <code>serverC</code> 对 C 不可达，但 B 可以访问 <code>serverC:3306</code>，C 需要先经 A 再到 B：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -o ExitOnForwardFailure=yes \</span>
+<span class="go">    -J userA@serverA \</span>
+<span class="go">    -L 127.0.0.1:13306:serverC:3306 \</span>
+<span class="go">    userB@serverB</span>
+</code></pre></div>
 
+<p>然后让本机客户端连接：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; mysql -h 127.0.0.1 -P 13306 -u db_user_name -p db_name</span>
+</code></pre></div>
 
-<p>来源：<a href="http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/">http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/</a></p>
-<p>可以编写脚本把它们组合起来，本机上运行该脚本即可借助跳板机连上 Redis：</p>
-<div class="hlcode"><pre><span class="c">#!/bin/sh</span>
+<p>图形化客户端的关键配置是：</p>
+<div class="codehilite"><pre><span></span><code>MySQL Host: 127.0.0.1
+MySQL Port: 13306
+MySQL User: db_user_name
+</code></pre></div>
 
-<span class="nv">PORT</span><span class="o">=</span>9999
+<p>SSH 隧道可以单独在终端运行，GUI 不需要再建立第二条 SSH 隧道。</p>
+<p>如果 GUI 只支持“通过 SSH 登录数据库”，不能使用 <code>ProxyJump</code>，可以先把 B 的 SSH 端口转到 C：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -L 127.0.0.1:1234:serverB:22 userA@serverA</span>
+</code></pre></div>
+
+<p>然后在 GUI 中把 SSH Host 设置为 <code>127.0.0.1</code>、SSH Port 设置为 <code>1234</code>，数据库目标仍填写 <code>serverC:3306</code>。此时 GUI 建立的第二条 SSH 连接会落到 B，再由 B 访问 C。</p>
+<h3 id="redis">通过跳板机连接 Redis</h3>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -o ExitOnForwardFailure=yes \</span>
+<span class="go">    -L 127.0.0.1:9999:redis-host:6379 \</span>
+<span class="go">    -p 22 userA@serverA</span>
+</code></pre></div>
+
+<p>另开终端使用本机端口：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; redis-cli -h 127.0.0.1 -p 9999</span>
+</code></pre></div>
+
+<p>也可以把隧道和客户端组合成脚本。下面的写法使用 SSH control socket 检查隧道是否真的建立，避免固定 <code>sleep 1</code> 带来的竞态：</p>
+<div class="codehilite"><pre><span></span><code><span class="ch">#!/bin/sh</span>
+
+<span class="nb">set</span><span class="w"> </span>-eu
+
+<span class="nv">PORT</span><span class="o">=</span><span class="m">9999</span>
 <span class="nv">REDIS_HOST</span><span class="o">=</span>redis-host
-<span class="nv">REDIS_PORT</span><span class="o">=</span>6379
-<span class="nv">SOCK_PATH</span><span class="o">=</span>/tmp/<span class="k">${</span><span class="nv">REDIS_HOST</span><span class="k">}</span>.sock
-<span class="nv">SSH_PORT</span><span class="o">=</span>22
+<span class="nv">REDIS_PORT</span><span class="o">=</span><span class="m">6379</span>
+<span class="nv">SSH_PORT</span><span class="o">=</span><span class="m">22</span>
 <span class="nv">SSH_USER</span><span class="o">=</span>userA
 <span class="nv">SSH_HOST</span><span class="o">=</span>serverA
+<span class="nv">SSH_TARGET</span><span class="o">=</span><span class="nv">$SSH_USER</span>@<span class="nv">$SSH_HOST</span>
+<span class="nv">SOCK_PATH</span><span class="o">=</span>/tmp/redis-ssh-tunnel.sock
+<span class="nv">tunnel_pid</span><span class="o">=</span>
 
-ssh -N -M -S <span class="k">${</span><span class="nv">SOCK_PATH</span><span class="k">}</span> -L <span class="k">${</span><span class="nv">PORT</span><span class="k">}</span>:<span class="k">${</span><span class="nv">REDIS_HOST</span><span class="k">}</span>:<span class="k">${</span><span class="nv">REDIS_PORT</span><span class="k">}</span> -p <span class="k">${</span><span class="nv">SSH_PORT</span><span class="k">}</span> <span class="k">${</span><span class="nv">SSH_USER</span><span class="k">}</span>@<span class="k">${</span><span class="nv">SSH_HOST</span><span class="k">}</span> &amp;
+cleanup<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>ssh<span class="w"> </span>-S<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SOCK_PATH</span><span class="s2">&quot;</span><span class="w"> </span>-O<span class="w"> </span><span class="nb">exit</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SSH_PORT</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SSH_TARGET</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$tunnel_pid</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">            </span><span class="nb">kill</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$tunnel_pid</span><span class="s2">&quot;</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
+<span class="w">        </span><span class="k">fi</span>
+<span class="w">    </span><span class="k">fi</span>
+<span class="o">}</span>
+<span class="nb">trap</span><span class="w"> </span>cleanup<span class="w"> </span>EXIT
 
-<span class="c"># 结束脚本时退出 ssh</span>
-<span class="nb">trap</span> <span class="s2">&quot;ssh -S ${SOCK_PATH} -O exit ${SSH_USER}@${SSH_HOST}&quot;</span> EXIT
+ssh<span class="w"> </span>-NT<span class="w"> </span>-M<span class="w"> </span>-S<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SOCK_PATH</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">ExitOnForwardFailure</span><span class="o">=</span>yes<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">ServerAliveInterval</span><span class="o">=</span><span class="m">30</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">ServerAliveCountMax</span><span class="o">=</span><span class="m">3</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-L<span class="w"> </span><span class="s2">&quot;127.0.0.1:</span><span class="nv">$PORT</span><span class="s2">:</span><span class="nv">$REDIS_HOST</span><span class="s2">:</span><span class="nv">$REDIS_PORT</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SSH_PORT</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SSH_TARGET</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<span class="nv">tunnel_pid</span><span class="o">=</span><span class="nv">$!</span>
 
-<span class="c"># 等待 ssh 连接建立</span>
-sleep 1
+<span class="nv">i</span><span class="o">=</span><span class="m">0</span>
+<span class="k">while</span><span class="w"> </span>!<span class="w"> </span>ssh<span class="w"> </span>-S<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SOCK_PATH</span><span class="s2">&quot;</span><span class="w"> </span>-O<span class="w"> </span>check<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SSH_PORT</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SSH_TARGET</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span><span class="nv">i</span><span class="o">=</span><span class="k">$((</span><span class="nv">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="m">1</span><span class="k">))</span>
+<span class="w">    </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$i</span><span class="s2">&quot;</span><span class="w"> </span>-lt<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<span class="w">    </span><span class="nb">kill</span><span class="w"> </span>-0<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$tunnel_pid</span><span class="s2">&quot;</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<span class="w">    </span>sleep<span class="w"> </span><span class="m">1</span>
+<span class="k">done</span>
 
-redis-cli -p <span class="k">${</span><span class="nv">PORT</span><span class="k">}</span>
-</pre></div>
+redis-cli<span class="w"> </span>-h<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PORT</span><span class="s2">&quot;</span>
+</code></pre></div>
 
+<p>长时间运行的服务应优先使用 systemd、launchd 或专门的 supervisor；上面的脚本适合本机临时使用。</p>
+<h2 id="socks-d">临时建立 SOCKS 代理：<code>-D</code></h2>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -D 127.0.0.1:1080 userA@serverA</span>
+</code></pre></div>
 
-<h2 id="_1">远程主机网络抓包</h2>
-<p>在分析网络协议时，常常需要借助 wireshark 等抓包工具捕获、显示网络数据。但 wireshark 依赖图形界面系统，我们一般不具备直接在远程主机运行 wireshark 的条件，所以要捕获远程主机的网络包时，就需要在远程主机运行 tcpdump 这个命令行工具了。但 tcpdump 显示的结果没有 wireshark 直观，我们可以结合两个工具，实时地通过本机的 wireshark 显示远程主机 tcpdump 捕获的网络数据。</p>
-<p>以捕获远程主机 serverA "eth0" 网卡的 TCP 2001 端口网络数据，并实时显示到本机的 wireshark 为例:</p>
-<div class="hlcode"><pre><span class="n">local</span><span class="o">&gt;</span> <span class="n">ssh</span> <span class="n">userA</span><span class="err">@</span><span class="n">serverA</span> <span class="n">tcpdump</span> <span class="o">-</span><span class="n">U</span> <span class="o">-</span><span class="n">s0</span> <span class="o">-</span><span class="n">w</span> <span class="o">-</span> <span class="o">-</span><span class="n">i</span> <span class="n">eth0</span> <span class="err">&#39;</span><span class="n">port</span> <span class="mi">2001</span><span class="err">&#39;</span> <span class="o">|</span> <span class="n">wireshark</span> <span class="o">-</span><span class="n">k</span> <span class="o">-</span><span class="n">i</span> <span class="o">-</span>
-</pre></div>
+<p>把浏览器或支持 SOCKS5 的客户端配置为 <code>127.0.0.1:1080</code>。命令行测试可以使用：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; curl --proxy socks5h://127.0.0.1:1080 https://example.com/</span>
+</code></pre></div>
 
+<p><code>socks5h</code> 中的 <code>h</code> 表示让代理端解析域名，避免 DNS 请求仍从 C 发出。SSH 的动态转发主要承载 TCP，不是完整 VPN，不能直接转发所有 UDP、广播或 ICMP 流量。</p>
+<h2 id="_5">远程主机网络抓包</h2>
+<p>远程主机通常没有图形界面，可以在远程运行 <code>tcpdump</code>，把 pcap 流实时交给本机 Wireshark。</p>
+<p>以捕获 A 的 <code>eth0</code> 网卡上 TCP 2001 端口的数据为例：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -T userA@serverA \</span>
+<span class="go">    &quot;sudo tcpdump -U -s 0 -w - -i eth0 &#39;tcp port 2001&#39;&quot; \</span>
+<span class="go">    | wireshark -k -i -</span>
+</code></pre></div>
 
-<p><code>-U</code> 表示禁用文件缓冲，<code>-s0</code> 表示不截断 tcpdump 的每行数据结果，<code>-w -</code> 表示将结果输出到终端，对应于 wireshark 的 <code>-i -</code> 选项表示从终端读入数据。</p>
-<p>如果不需要在 wireshark 实时显示数据，也可以通过 tcpdump 输出到文件，再下载回本机，使用 wireshark 分析该文件。</p>
+<ul>
+<li><code>-U</code>：让 pcap 尽快刷新，适合实时管道。</li>
+<li><code>-s 0</code>：使用完整 snaplen，避免截断数据包。</li>
+<li><code>-w -</code>：把二进制 pcap 写到标准输出。</li>
+<li>Wireshark 的 <code>-i -</code>：从标准输入读取 pcap。</li>
+</ul>
+<p>如果不需要实时显示，可以保存后再分析：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -T userA@serverA \</span>
+<span class="go">    &quot;sudo tcpdump -U -s 0 -w - -i eth0 &#39;tcp port 2001&#39;&quot; \</span>
+<span class="go">    &gt; serverA-2001.pcap</span>
+<span class="go">C&gt; wireshark serverA-2001.pcap</span>
+</code></pre></div>
+
+<p>远程 <code>sudo</code> 必须已经具备执行权限，或在一个单独的交互式会话中完成认证；不要让 sudo 的密码提示混入 pcap 数据流。抓包通常需要 root 或 <code>CAP_NET_RAW</code>、<code>CAP_NET_ADMIN</code> 等权限。</p>
+<h2 id="-r">通过公网主机反向访问内网主机：<code>-R</code></h2>
+<h3 id="_6">原理和拓扑</h3>
+<p>当 B 没有公网 IP，但 B 能主动访问 A 的 SSH 端口时，让 B 主动建立到 A 的 SSH 连接，并在 A 上请求一个远程监听端口：</p>
+<div class="codehilite"><pre><span></span><code>B  --主动 SSH 连接--&gt;  A
+
+A:127.0.0.1:2222  --反向隧道--&gt;  B:127.0.0.1:22
+</code></pre></div>
+
+<p><code>-R</code> 的语法是：</p>
+<div class="codehilite"><pre><span></span><code>-R [listen_address:]listen_port:target_host:target_port
+</code></pre></div>
+
+<p>左侧监听端口出现在 SSH 服务端 A，右侧目标从 SSH 客户端 B 的网络视角访问。这个方案不是“让 A 主动穿过 NAT”，而是利用 B 已经建立的出站连接；B 必须能访问 A，A 的 SSH 端口也必须允许该连接。</p>
+<h3 id="_7">前置条件</h3>
+<p>A 需要：</p>
+<ul>
+<li>有公网 IP 或公网域名。</li>
+<li>对 B 开放 SSH 服务端口。</li>
+<li>安装并运行 <code>openssh-server</code>。</li>
+<li>允许远程端口转发，但最好只允许专用用户和专用端口。</li>
+</ul>
+<p>B 需要：</p>
+<ul>
+<li>能主动连接 A 的 SSH 端口。</li>
+<li>安装 <code>openssh-client</code>。</li>
+<li>最终要被登录时，必须运行自己的 <code>sshd</code>。</li>
+</ul>
+<p>C 需要：</p>
+<ul>
+<li>能访问 A。</li>
+<li>安装 SSH 客户端。</li>
+</ul>
+<h3 id="b-ssh">B 开启 SSH 服务</h3>
+<p>Debian 或 Ubuntu 示例：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudo apt update</span>
+<span class="go">B&gt; sudo apt install openssh-server</span>
+<span class="go">B&gt; sudo systemctl enable --now ssh</span>
+<span class="go">B&gt; systemctl status ssh --no-pager</span>
+</code></pre></div>
+
+<p>如果 B 完全只通过反向隧道访问，可以让 SSH 只监听回环地址，减少局域网暴露面。优先使用发行版已经 Include 的 drop-in 目录：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudoedit /etc/ssh/sshd_config.d/99-listen-localonly.conf</span>
+</code></pre></div>
+
+<p>内容：</p>
+<div class="codehilite"><pre><span></span><code>ListenAddress 127.0.0.1
+</code></pre></div>
+
+<p>确认主配置中没有与之冲突的 <code>ListenAddress</code>，然后检查并重载：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudo sshd -t</span>
+<span class="go">B&gt; sudo systemctl reload ssh</span>
+</code></pre></div>
+
+<p>如果 B 还需要被同一局域网直接 SSH，不要只监听 <code>127.0.0.1</code>；应监听明确的局域网地址，并配合关闭密码登录、限制用户和主机防火墙。</p>
+<h3 id="a-key">A 创建隧道专用用户和 key</h3>
+<p>不要让 B 使用 A 的 root 或日常管理账号建立常驻隧道。A 上创建专用用户：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; sudo adduser --disabled-password --gecos &quot;&quot; tunnel</span>
+</code></pre></div>
+
+<p>B 上单独生成连接 A 的 key，不要复用日常登录 key：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_to_host_a</span>
+<span class="go">B&gt; chmod 600 ~/.ssh/id_ed25519_to_host_a</span>
+</code></pre></div>
+
+<p>如果 A 的 <code>tunnel</code> 用户禁用了密码登录，<code>ssh-copy-id</code> 不能完成安装。可以使用 A 的管理账号登录后手工安装公钥：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; cat ~/.ssh/id_ed25519_to_host_a.pub</span>
+<span class="go">A&gt; sudo install -d -m 700 -o tunnel -g tunnel /home/tunnel/.ssh</span>
+<span class="go">A&gt; sudoedit /home/tunnel/.ssh/authorized_keys</span>
+</code></pre></div>
+
+<p>写入公钥后修正权限：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; sudo chown -R tunnel:tunnel /home/tunnel/.ssh</span>
+<span class="go">A&gt; sudo chmod 700 /home/tunnel/.ssh</span>
+<span class="go">A&gt; sudo chmod 600 /home/tunnel/.ssh/authorized_keys</span>
+</code></pre></div>
+
+<h3 id="key-a-sshd">限制隧道 key 和 A 的 sshd</h3>
+<p>在 A 的 <code>authorized_keys</code> 中，给 B 的 key 加上限制：</p>
+<div class="codehilite"><pre><span></span><code>restrict,port-forwarding,permitlisten=&quot;127.0.0.1:2222&quot; ssh-ed25519 AAAA... reverse-ssh-to-b
+</code></pre></div>
+
+<p>这里的重点是：</p>
+<ul>
+<li><code>restrict</code> 默认关闭伪终端、agent forwarding、X11 forwarding、用户 rc 和端口转发等能力。</li>
+<li><code>port-forwarding</code> 只重新开启端口转发能力。</li>
+<li><code>permitlisten</code> 只允许该 key 在 A 的 <code>127.0.0.1:2222</code> 监听。</li>
+<li><code>permitlisten</code> 限制的是 <code>-R</code> 的监听端；不要用只限制 <code>-L</code> 的 <code>permitopen</code> 替代它。</li>
+</ul>
+<p>A 的 <code>/etc/ssh/sshd_config</code> 可以为 <code>tunnel</code> 用户增加单独的 <code>Match</code>：</p>
+<div class="codehilite"><pre><span></span><code>Match User tunnel
+    AllowTcpForwarding remote
+    GatewayPorts no
+    PermitListen 127.0.0.1:2222
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTTY no
+    ClientAliveInterval 30
+    ClientAliveCountMax 3
+</code></pre></div>
+
+<p><code>GatewayPorts no</code> 保证远程转发端口默认只对 A 本机可见；<code>ClientAlive*</code> 用于在 B 断网、睡眠或代理异常后清理 A 上失效的 SSH 会话，避免旧会话长期占住 <code>2222</code>。</p>
+<p>检查实际生效配置：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; sudo sshd -t</span>
+<span class="go">A&gt; sudo systemctl reload ssh</span>
+<span class="go">A&gt; sudo sshd -T -C user=tunnel,host=localhost,addr=127.0.0.1 \</span>
+<span class="go">    | rg &#39;allowtcpforwarding|gatewayports|permitlisten|clientalive|permittty&#39;</span>
+</code></pre></div>
+
+<p><code>restrict</code>、<code>permitlisten</code> 和 <code>PermitListen</code> 需要较新的 OpenSSH。如果旧版本不认识这些选项，应先升级或查阅对应版本的 <code>sshd(8)</code>，不要为了绕过错误而去掉所有限制。</p>
+<h3 id="b">B 手动建立和验证隧道</h3>
+<p>B 上先用前台命令测试：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; ssh -NT \</span>
+<span class="go">    -i ~/.ssh/id_ed25519_to_host_a \</span>
+<span class="go">    -o BatchMode=yes \</span>
+<span class="go">    -o ExitOnForwardFailure=yes \</span>
+<span class="go">    -o ServerAliveInterval=30 \</span>
+<span class="go">    -o ServerAliveCountMax=3 \</span>
+<span class="go">    -o TCPKeepAlive=no \</span>
+<span class="go">    -o StrictHostKeyChecking=yes \</span>
+<span class="go">    -R 127.0.0.1:2222:127.0.0.1:22 \</span>
+<span class="go">    tunnel@a.example.com</span>
+</code></pre></div>
+
+<p>第一次连接 A 时应通过可信渠道核对 A 的主机 key 指纹，再保存到 B 的 <code>known_hosts</code>；生产配置不要使用 <code>StrictHostKeyChecking=no</code> 或把 <code>known_hosts</code> 指向 <code>/dev/null</code>。</p>
+<p>A 上检查监听并直接测试 B：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; ss -lntp | rg &#39;:2222&#39;</span>
+<span class="go">A&gt; ssh -p 2222 b_user@127.0.0.1</span>
+</code></pre></div>
+
+<p>C 上通过 A 的普通 SSH 登录作为跳板，访问 A 本机的 <code>2222</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -J your_a_user@a.example.com -p 2222 b_user@127.0.0.1</span>
+</code></pre></div>
+
+<p>这条命令的关键是 <code>-J</code>：C 先连接 A，再让 A 连接自己的 <code>127.0.0.1:2222</code>。因为 <code>2222</code> 只监听 A 的回环地址，C 不应直接执行 <code>ssh -p 2222 a.example.com</code>。</p>
+<p>反向 SSH 不只可以转发 B 的 SSH，也可以转发 B 上的 HTTP、数据库等 TCP 服务。例如把 B 的 <code>8080</code> 暴露为 A 本机的 <code>18080</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; ssh -NT ... -R 127.0.0.1:18080:127.0.0.1:8080 tunnel@a.example.com</span>
+</code></pre></div>
+
+<p>此时 A 本机的程序可以访问 <code>127.0.0.1:18080</code>。如果 C 需要访问这个非 SSH 服务，通常再从 C 开一条到 A 的本地转发：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -NT -L 127.0.0.1:18080:127.0.0.1:18080 your_a_user@a.example.com</span>
+</code></pre></div>
+
+<p>每增加一个反向入口，都应分配独占端口，并同步更新 <code>PermitListen</code> 和对应 key 的 <code>permitlisten</code>。</p>
+<h3 id="systemd">使用 systemd 自动重连</h3>
+<p>手动前台命令适合验证，不适合长期运行。B 上创建 <code>/etc/systemd/system/reverse-ssh-to-host-a.service</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[Unit]</span>
+<span class="na">Description</span><span class="o">=</span><span class="s">Reverse SSH tunnel to Host A</span>
+<span class="na">After</span><span class="o">=</span><span class="s">network-online.target</span>
+<span class="na">Wants</span><span class="o">=</span><span class="s">network-online.target</span>
+<span class="na">StartLimitIntervalSec</span><span class="o">=</span><span class="s">0</span>
+
+<span class="k">[Service]</span>
+<span class="na">Type</span><span class="o">=</span><span class="s">simple</span>
+<span class="na">User</span><span class="o">=</span><span class="s">b_user</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">HOME=/home/b_user</span>
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/bin/ssh -NT </span>\
+<span class="w">  </span><span class="s">-i /home/b_user/.ssh/id_ed25519_to_host_a </span>\
+<span class="w">  </span><span class="s">-o BatchMode=yes </span>\
+<span class="w">  </span><span class="s">-o ConnectTimeout=15 </span>\
+<span class="w">  </span><span class="s">-o ExitOnForwardFailure=yes </span>\
+<span class="w">  </span><span class="s">-o ServerAliveInterval=30 </span>\
+<span class="w">  </span><span class="s">-o ServerAliveCountMax=3 </span>\
+<span class="w">  </span><span class="s">-o TCPKeepAlive=no </span>\
+<span class="w">  </span><span class="s">-o StrictHostKeyChecking=yes </span>\
+<span class="w">  </span><span class="s">-o LogLevel=VERBOSE </span>\
+<span class="w">  </span><span class="s">-R 127.0.0.1:2222:127.0.0.1:22 </span>\
+<span class="w">  </span><span class="s">tunnel@a.example.com</span>
+<span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
+<span class="na">RestartSec</span><span class="o">=</span><span class="s">10</span>
+
+<span class="k">[Install]</span>
+<span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
+</code></pre></div>
+
+<p>确认 key、<code>.ssh</code> 和 <code>known_hosts</code> 都属于 <code>b_user</code>，再启用服务：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudo systemctl daemon-reload</span>
+<span class="go">B&gt; sudo systemctl enable --now reverse-ssh-to-host-a.service</span>
+<span class="go">B&gt; systemctl status reverse-ssh-to-host-a.service</span>
+<span class="go">B&gt; journalctl -u reverse-ssh-to-host-a.service -f</span>
+</code></pre></div>
+
+<p>如果之前手动测试命令还在运行，先停止它，否则 A 的 <code>2222</code> 已经被占用，systemd 会反复报告 <code>remote port forwarding failed</code>。</p>
+<p><code>ServerAlive*</code> 让 B 在到 A 的连接失效时主动退出；A 侧的 <code>ClientAlive*</code> 负责清理 A 上已经失联的旧会话。两边一起配置，自动重连才可靠。</p>
+<h2 id="macos-launchd">macOS 没有管理员权限时使用 launchd</h2>
+<p>如果 macOS 没有权限开启系统级 Remote Login，可以在用户目录运行一个只监听高位端口的独立 <code>sshd</code>，再用用户态 <code>launchd</code> 保持反向隧道。这个方案与 Linux 的 systemd 二选一。</p>
+<h3 id="sshd">用户态 sshd</h3>
+<p>以下示例使用 Homebrew OpenSSH；路径以 Apple Silicon 为例，Intel macOS 或系统 OpenSSH 请先用 <code>command -v sshd</code> 确认实际路径。</p>
+<div class="codehilite"><pre><span></span><code><span class="go">macOS&gt; brew install openssh</span>
+<span class="go">macOS&gt; mkdir -p ~/.config/reverse-ssh-tunnel-macos/logs</span>
+<span class="go">macOS&gt; ssh-keygen -t ed25519 \</span>
+<span class="go">    -f ~/.config/reverse-ssh-tunnel-macos/ssh_host_ed25519_key -N &#39;&#39;</span>
+<span class="go">macOS&gt; ssh-keygen -t ed25519 \</span>
+<span class="go">    -f ~/.ssh/id_ed25519_to_host_a_macos_tunnel</span>
+<span class="go">macOS&gt; cat ~/.ssh/id_ed25519_to_host_a_macos_tunnel.pub</span>
+</code></pre></div>
+
+<p>创建 <code>/Users/your_user/.config/reverse-ssh-tunnel-macos/sshd_config</code>：</p>
+<div class="codehilite"><pre><span></span><code>Port 22022
+ListenAddress 127.0.0.1
+AddressFamily inet
+HostKey /Users/your_user/.config/reverse-ssh-tunnel-macos/ssh_host_ed25519_key
+AuthorizedKeysFile /Users/your_user/.ssh/authorized_keys_reverse_tunnel_macos
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+AllowUsers your_user
+AllowTcpForwarding no
+X11Forwarding no
+SetEnv LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8
+</code></pre></div>
+
+<p>如果还需要同一局域网客户端直连，把 <code>ListenAddress</code> 改成 <code>0.0.0.0</code>，但必须保持公钥认证、关闭密码登录、限制 <code>AllowUsers</code>，并用 macOS 防火墙或可信网络边界限制 <code>22022</code>。完全不需要局域网直连时，保持 <code>127.0.0.1</code>。</p>
+<p>把允许登录该用户态 sshd 的客户端公钥写入单独文件，并检查配置：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">macOS&gt; touch ~/.ssh/authorized_keys_reverse_tunnel_macos</span>
+<span class="go">macOS&gt; chmod 600 ~/.ssh/authorized_keys_reverse_tunnel_macos</span>
+<span class="go">macOS&gt; /opt/homebrew/sbin/sshd -t \</span>
+<span class="go">    -f ~/.config/reverse-ssh-tunnel-macos/sshd_config</span>
+</code></pre></div>
+
+<h3 id="launchd-agent">两个 launchd agent</h3>
+<p><code>launchd</code> 的 <code>ProgramArguments</code> 使用绝对路径，不会替你展开 <code>~</code>。创建 <code>~/Library/LaunchAgents/com.example.reverse-ssh.local-sshd.plist</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="cp">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;</span>
+<span class="cp">&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot;</span>
+<span class="cp">  &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;</span>
+<span class="nt">&lt;plist</span><span class="w"> </span><span class="na">version=</span><span class="s">&quot;1.0&quot;</span><span class="nt">&gt;</span>
+<span class="nt">&lt;dict&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>Label<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;string&gt;</span>com.example.reverse-ssh.local-sshd<span class="nt">&lt;/string&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>ProgramArguments<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;array&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>/opt/homebrew/sbin/sshd<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-D<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-e<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-f<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>/Users/your_user/.config/reverse-ssh-tunnel-macos/sshd_config<span class="nt">&lt;/string&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/array&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>RunAtLoad<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;true/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>KeepAlive<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;true/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>StandardErrorPath<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;string&gt;</span>/Users/your_user/.config/reverse-ssh-tunnel-macos/logs/local-sshd.stderr.log<span class="nt">&lt;/string&gt;</span>
+<span class="nt">&lt;/dict&gt;</span>
+<span class="nt">&lt;/plist&gt;</span>
+</code></pre></div>
+
+<p>创建 <code>~/Library/LaunchAgents/com.example.reverse-ssh.to-host-a.plist</code>：</p>
+<div class="codehilite"><pre><span></span><code><span class="cp">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;</span>
+<span class="cp">&lt;!DOCTYPE plist PUBLIC &quot;-//Apple//DTD PLIST 1.0//EN&quot;</span>
+<span class="cp">  &quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;&gt;</span>
+<span class="nt">&lt;plist</span><span class="w"> </span><span class="na">version=</span><span class="s">&quot;1.0&quot;</span><span class="nt">&gt;</span>
+<span class="nt">&lt;dict&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>Label<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;string&gt;</span>com.example.reverse-ssh.to-host-a<span class="nt">&lt;/string&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>ProgramArguments<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;array&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>/usr/bin/ssh<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-NT<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-i<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>/Users/your_user/.ssh/id_ed25519_to_host_a_macos_tunnel<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-o<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>BatchMode=yes<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-o<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>ExitOnForwardFailure=yes<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-o<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>ServerAliveInterval=30<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-o<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>ServerAliveCountMax=3<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-o<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>TCPKeepAlive=no<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-o<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>StrictHostKeyChecking=yes<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>-R<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>127.0.0.1:2223:127.0.0.1:22022<span class="nt">&lt;/string&gt;</span>
+<span class="w">    </span><span class="nt">&lt;string&gt;</span>tunnel@a.example.com<span class="nt">&lt;/string&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/array&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>RunAtLoad<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;true/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>KeepAlive<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;true/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>ThrottleInterval<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;integer&gt;</span>10<span class="nt">&lt;/integer&gt;</span>
+<span class="w">  </span><span class="nt">&lt;key&gt;</span>StandardErrorPath<span class="nt">&lt;/key&gt;</span>
+<span class="w">  </span><span class="nt">&lt;string&gt;</span>/Users/your_user/.config/reverse-ssh-tunnel-macos/logs/reverse-tunnel.stderr.log<span class="nt">&lt;/string&gt;</span>
+<span class="nt">&lt;/dict&gt;</span>
+<span class="nt">&lt;/plist&gt;</span>
+</code></pre></div>
+
+<p>A 上应为 macOS 的 key 单独增加：</p>
+<div class="codehilite"><pre><span></span><code>restrict,port-forwarding,permitlisten=&quot;127.0.0.1:2223&quot; ssh-ed25519 AAAA... reverse-ssh-from-macos
+</code></pre></div>
+
+<p>加载并查看状态：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">macOS&gt; launchctl bootstrap gui/$(id -u) \</span>
+<span class="go">    &quot;$HOME/Library/LaunchAgents/com.example.reverse-ssh.local-sshd.plist&quot;</span>
+<span class="go">macOS&gt; launchctl bootstrap gui/$(id -u) \</span>
+<span class="go">    &quot;$HOME/Library/LaunchAgents/com.example.reverse-ssh.to-host-a.plist&quot;</span>
+<span class="go">macOS&gt; launchctl kickstart -k gui/$(id -u)/com.example.reverse-ssh.local-sshd</span>
+<span class="go">macOS&gt; launchctl kickstart -k gui/$(id -u)/com.example.reverse-ssh.to-host-a</span>
+<span class="go">macOS&gt; launchctl print gui/$(id -u)/com.example.reverse-ssh.to-host-a</span>
+<span class="go">macOS&gt; lsof -nP -iTCP:22022 -sTCP:LISTEN</span>
+</code></pre></div>
+
+<p>检查日志：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">macOS&gt; sed -n &#39;1,120p&#39; \</span>
+<span class="go">    ~/.config/reverse-ssh-tunnel-macos/logs/local-sshd.stderr.log</span>
+<span class="go">macOS&gt; sed -n &#39;1,120p&#39; \</span>
+<span class="go">    ~/.config/reverse-ssh-tunnel-macos/logs/reverse-tunnel.stderr.log</span>
+</code></pre></div>
+
+<p>独立的用户态 <code>sshd</code> 不一定继承系统 <code>/etc/ssh/sshd_config</code> 的 <code>AcceptEnv</code>。因此配置中的 <code>SetEnv LANG=... LC_CTYPE=...</code> 不只是显示优化，也能避免 Linux 客户端传入 macOS 不支持的 locale 导致中文乱码。</p>
+<h2 id="_8">局域网优先、反向隧道兜底</h2>
+<p>客户端和 B 在同一局域网时，始终绕公网 A 会增加延迟，也会让文件传输带宽受 A 限制。建议保留三个入口：</p>
+<div class="codehilite"><pre><span></span><code>host-b-lan    强制局域网直连，用于测速和排障
+host-b-via-a  强制通过 A，用于外网访问和排障
+host-b        自动判断，作为日常入口
+</code></pre></div>
+
+<h3 id="ssh-hostkeyalias">SSH 配置和 HostKeyAlias</h3>
+<div class="codehilite"><pre><span></span><code>Host host-a
+    HostName a.example.com
+    User your_a_user
+
+Host host-b-via-a
+    HostName 127.0.0.1
+    User b_user
+    Port 2222
+    ProxyJump host-a
+    IdentityFile ~/.ssh/id_ed25519_to_host_b
+    IdentitiesOnly yes
+    HostKeyAlias host-b-sshd
+
+Host host-b-lan
+    HostName b.local
+    User b_user
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519_to_host_b
+    IdentitiesOnly yes
+    HostKeyAlias host-b-sshd
+    ConnectTimeout 2
+    ConnectionAttempts 1
+</code></pre></div>
+
+<p><code>HostKeyAlias</code> 让两条路径共用同一个逻辑主机 key 记录，但只有在局域网路径和反向路径确实连接到同一台机器、并已核对 ED25519 指纹后才可以这样设置。不同内网机器必须使用不同的 alias。</p>
+<h3 id="mdns-ip">使用 mDNS 应对局域网 IP 变化</h3>
+<p>macOS 可以使用 Bonjour/mDNS 名称，而不是把 DHCP 地址写死：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">macOS&gt; sudo scutil --set LocalHostName b</span>
+<span class="go">Linux&gt; getent hosts b.local</span>
+<span class="go">Linux&gt; avahi-resolve-host-name b.local</span>
+</code></pre></div>
+
+<p><code>.local</code> 通常只在同一二层网络可用。访客 Wi-Fi 的客户端隔离、不同 VLAN、禁用组播，都可能导致解析失败。跨 VLAN 时应使用路由器的 DHCP 地址保留、本地 DNS，或 Tailscale/WireGuard 等组网方案。</p>
+<p>不要让内网主机定时把 <code>192.168.x.x</code> 等地址上报到 A：这些地址只在对应局域网有意义，还会引入多网卡选择、地址过期和上报鉴权等状态。</p>
+<h3 id="mihomo-tunfake-ip">mihomo TUN/Fake-IP 下按路由选路</h3>
+<p>Fake-IP 代理可能为域名返回 <code>198.18.0.0/16</code> 地址，并由 TUN 接口接管连接。只执行 <code>nc -z b.local 22</code> 可能把“已被代理接管”误判成“局域网直连”。Linux 客户端可以先解析 IPv4，再用 <code>ip route get</code> 判断是否经过网关：</p>
+<div class="codehilite"><pre><span></span><code><span class="ch">#!/bin/sh</span>
+
+<span class="nb">set</span><span class="w"> </span>-u
+
+<span class="nv">host</span><span class="o">=</span><span class="nv">$1</span>
+<span class="nv">port</span><span class="o">=</span><span class="nv">$2</span>
+<span class="nv">jump_host</span><span class="o">=</span><span class="nv">$3</span>
+<span class="nv">relay_target</span><span class="o">=</span><span class="nv">$4</span>
+
+relay<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span><span class="nb">exec</span><span class="w"> </span>ssh<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$jump_host</span><span class="s2">&quot;</span><span class="w"> </span>-W<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$relay_target</span><span class="s2">&quot;</span>
+<span class="o">}</span>
+
+<span class="nv">address</span><span class="o">=</span><span class="k">$(</span>getent<span class="w"> </span>ahostsv4<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$host</span><span class="s2">&quot;</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;NR == 1 { print $1; exit }&#39;</span><span class="k">)</span>
+<span class="o">[</span><span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$address</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">||</span><span class="w"> </span>relay
+
+<span class="nv">route</span><span class="o">=</span><span class="k">$(</span>ip<span class="w"> </span>-4<span class="w"> </span>route<span class="w"> </span>get<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$address</span><span class="s2">&quot;</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="k">)</span><span class="w"> </span><span class="o">||</span><span class="w"> </span>relay
+<span class="k">case</span><span class="w"> </span><span class="s2">&quot; </span><span class="nv">$route</span><span class="s2"> &quot;</span><span class="w"> </span><span class="k">in</span>
+<span class="w">    </span>*<span class="s2">&quot; via &quot;</span>*<span class="o">)</span><span class="w"> </span>relay<span class="w"> </span><span class="p">;;</span>
+<span class="k">esac</span>
+
+<span class="nb">exec</span><span class="w"> </span>nc<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$address</span><span class="s2">&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$port</span><span class="s2">&quot;</span>
+</code></pre></div>
+
+<p>保存为 <code>~/.local/bin/ssh-lan-or-relay</code> 后检查：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; chmod 700 ~/.local/bin/ssh-lan-or-relay</span>
+<span class="go">C&gt; sh -n ~/.local/bin/ssh-lan-or-relay</span>
+</code></pre></div>
+
+<p>在自动入口中调用：</p>
+<div class="codehilite"><pre><span></span><code>Host host-b
+    HostName b.local
+    User b_user
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519_to_host_b
+    IdentitiesOnly yes
+    HostKeyAlias host-b-sshd
+    ProxyCommand ~/.local/bin/ssh-lan-or-relay %h %p host-a 127.0.0.1:2222
+</code></pre></div>
+
+<p>局域网地址没有 <code>via</code> 时直接使用 <code>nc</code>；解析失败或路由经过网关时，使用 <code>ssh host-a -W 127.0.0.1:2222</code> 进入 A 的反向入口。脚本是 Linux/IPv4 示例；macOS 可按 <code>route -n get</code> 和系统 <code>nc</code> 的输出调整。</p>
+<p>不要在真正连接前频繁执行一次 <code>nc -z</code> 探测：在某些 SSH 防护或代理环境中，只有 TCP 建立却没有 SSH 握手的连接会产生额外日志、惩罚或延迟。</p>
+<h3 id="_9">扩展到多台内网主机</h3>
+<p>每台机器都应拥有独立的局域网名称、A 上的回环端口、隧道 key 和 <code>HostKeyAlias</code>：</p>
+<div class="codehilite"><pre><span></span><code>机器       局域网名称    B SSH 端口    A 入口
+host-b     b.local       22            127.0.0.1:2222
+host-c     c.local       22            127.0.0.1:2224
+host-d     d.local       22            127.0.0.1:2225
+</code></pre></div>
+
+<p>接入新机器时同步完成：</p>
+<ol>
+<li>在 A 的 <code>PermitListen</code> 和对应 key 的 <code>permitlisten</code> 中加入独占端口。</li>
+<li>建立 <code>-R 127.0.0.1:&lt;A端口&gt;:127.0.0.1:&lt;B端口&gt;</code>。</li>
+<li>配置强制局域网、强制 A 和自动选路三个 SSH 别名。</li>
+<li>在可信路径上核对主机 key 指纹，并设置唯一 <code>HostKeyAlias</code>。</li>
+</ol>
+<h2 id="_10">安全和暴露面</h2>
+<ul>
+<li>A 上使用专用隧道用户，不使用 root 或日常管理账号。</li>
+<li>隧道 key 单独生成，权限设为 <code>600</code>，不要复用个人登录 key。</li>
+<li><code>authorized_keys</code> 使用 <code>restrict</code>、<code>permitlisten</code>，并在 sshd 的 <code>Match User</code> 中再次限制。</li>
+<li>A 的反向端口使用 <code>127.0.0.1</code>，保持 <code>GatewayPorts no</code>；不需要时不要设置 <code>0.0.0.0</code>、<code>::</code> 或 <code>-g</code>。</li>
+<li>A 的公网防火墙只开放 SSH 服务端口，不要为了访问 <code>2222</code> 而把它暴露到公网。</li>
+<li>B 只通过隧道访问时，可让 <code>sshd</code> 只监听 <code>127.0.0.1</code>。</li>
+<li>对外提供局域网 SSH 时，关闭密码认证、限制登录用户并设置主机防火墙。</li>
+<li>生产环境核对并固定 A、B 的主机 key，不要使用 <code>StrictHostKeyChecking=no</code>。</li>
+<li>只有在信任跳板机且确实需要时才使用 agent forwarding (<code>-A</code>)。</li>
+<li>保持 OpenSSH、操作系统和反向隧道依赖的 supervisor 更新。</li>
+</ul>
+<p>确认 A 的反向端口没有暴露到公网：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; ss -lntp | rg &#39;:2222&#39;</span>
+</code></pre></div>
+
+<p>期望看到类似：</p>
+<div class="codehilite"><pre><span></span><code>LISTEN 0 128 127.0.0.1:2222 0.0.0.0:*
+</code></pre></div>
+
+<p>如果看到 <code>0.0.0.0:2222</code> 或 <code>:::2222</code>，检查 <code>-R</code> 的监听地址、A 的 <code>GatewayPorts</code>、<code>PermitListen</code> 和主机防火墙。</p>
+<h2 id="_11">常见问题排查</h2>
+<h3 id="remote-port-forwarding-failed"><code>remote port forwarding failed</code></h3>
+<p>优先检查：</p>
+<ul>
+<li>A 上的端口已被旧隧道或其他程序占用。</li>
+<li><code>AllowTcpForwarding</code> 没有包含 <code>remote</code>。</li>
+<li><code>PermitListen</code> 或 key 的 <code>permitlisten</code> 与实际 <code>-R</code> 地址、端口不一致。</li>
+<li>A 的 OpenSSH 版本不认识限制选项。</li>
+<li>systemd/launchd 和手动测试命令同时运行，争抢同一个端口。</li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; ss -lntp | rg &#39;:2222&#39;</span>
+<span class="go">A&gt; ps -o pid,ppid,lstart,etime,user,cmd -C sshd | rg &#39;tunnel|PID&#39;</span>
+<span class="go">A&gt; sudo sshd -T -C user=tunnel,host=localhost,addr=127.0.0.1 \</span>
+<span class="go">    | rg &#39;allowtcpforwarding|gatewayports|permitlisten|clientalive&#39;</span>
+<span class="go">B&gt; journalctl -u reverse-ssh-to-host-a.service -n 100 --no-pager</span>
+</code></pre></div>
+
+<p>如果 A 上 <code>sshd: tunnel</code> 的启动时间明显早于 B 上 systemd 服务，可能是旧会话占用了端口。先核对 PID 和启动时间，只结束对应的旧 tunnel 子进程，不要杀掉 A 的主 <code>sshd</code> listener。旧会话释放后，systemd 会按 <code>RestartSec</code> 自动重试。</p>
+<h3 id="connection-refused">外部连接 <code>connection refused</code></h3>
+<p>这通常表示 C 已经通过 A，但 A 的 <code>127.0.0.1:2222</code> 当前没有监听：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; ss -lntp | rg &#39;:2222&#39;</span>
+<span class="go">B&gt; systemctl status reverse-ssh-to-host-a.service</span>
+<span class="go">B&gt; journalctl -u reverse-ssh-to-host-a.service -n 100 --no-pager</span>
+</code></pre></div>
+
+<h3 id="_12">外部连接卡住</h3>
+<p>说明隧道可能存在，但 B 侧的目标 SSH 服务没有正确响应。B 上检查：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; systemctl status ssh</span>
+<span class="go">B&gt; ss -lntp | rg &#39;:22&#39;</span>
+<span class="go">B&gt; ssh -p 22 b_user@127.0.0.1</span>
+</code></pre></div>
+
+<p>如果 B 的 <code>sshd</code> 没有监听 <code>127.0.0.1:22</code>，而 <code>-R</code> 却写的是这个地址，隧道会建立但登录会卡住或被关闭。</p>
+<h3 id="_13">网络恢复后没有自动重连</h3>
+<p>检查：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; systemctl status reverse-ssh-to-host-a.service</span>
+<span class="go">B&gt; journalctl -u reverse-ssh-to-host-a.service -n 100 --no-pager</span>
+</code></pre></div>
+
+<p>服务文件应至少有：</p>
+<div class="codehilite"><pre><span></span><code><span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
+<span class="na">RestartSec</span><span class="o">=</span><span class="s">10</span>
+</code></pre></div>
+
+<p>SSH 命令应包含：</p>
+<div class="codehilite"><pre><span></span><code>-o ExitOnForwardFailure=yes
+-o ServerAliveInterval=30
+-o ServerAliveCountMax=3
+</code></pre></div>
+
+<p>同时确认 B 到 A 的 DNS、路由、防火墙和代理规则没有阻断 SSH；可以临时运行 <code>ssh -vvv tunnel@a.example.com</code> 查看失败发生在解析、TCP、认证还是端口转发阶段。</p>
+<h3 id="a">A 的反向端口意外暴露</h3>
+<p>依次确认：</p>
+<ol>
+<li><code>-R</code> 使用 <code>127.0.0.1:2222:...</code>，不是 <code>0.0.0.0:2222:...</code>。</li>
+<li>A 的 <code>GatewayPorts no</code> 实际生效。</li>
+<li>A 的 <code>authorized_keys</code> 使用 <code>permitlisten="127.0.0.1:2222"</code>。</li>
+<li><code>ss -lntp</code> 显示监听地址是 <code>127.0.0.1</code>，而不是 <code>0.0.0.0</code> 或 <code>::</code>。</li>
+</ol>
+<h3 id="connection-closed-by-unknown-port-65535"><code>Connection closed by UNKNOWN port 65535</code></h3>
+<p>如果 C 连接一段时间后出现这个提示，同时 B 的日志反复出现 <code>remote port forwarding failed</code>，常见原因是 A 上旧的 <code>sshd: tunnel</code> 会话仍占用 <code>2222</code>。C 连接到的是旧监听，旧监听后端已经不健康，最终才被关闭。</p>
+<p>先检查 A 上的监听者和启动时间，确认后只结束旧的 tunnel 子进程。长期解决方法是保留 B 侧 <code>ServerAlive*</code>，并在 A 的 <code>Match User tunnel</code> 中配置：</p>
+<div class="codehilite"><pre><span></span><code>ClientAliveInterval 30
+ClientAliveCountMax 3
+</code></pre></div>
+
+<p>两类 keepalive 的职责不同：B 侧主动发现连接失效并重启，A 侧主动清理失联会话。</p>
+<h3 id="macos">macOS 登录后中文乱码</h3>
+<p>先判断是 locale 问题，而不是隧道修改了字节流：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh host-b-via-a &#39;locale; printf &quot;%s\n&quot; &quot;中文测试&quot;&#39;</span>
+</code></pre></div>
+
+<p>如果 <code>LANG</code> 为空、<code>LC_CTYPE</code> 是 <code>C</code> 或非 UTF-8，检查用户态 <code>sshd_config</code> 是否包含：</p>
+<div class="codehilite"><pre><span></span><code>SetEnv LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8
+</code></pre></div>
+
+<p>修改后重新检查配置并重启对应的 launchd agent。独立 <code>sshd</code> 不一定会继承系统 sshd 的 <code>AcceptEnv</code>；Linux 客户端发送的 <code>C.UTF-8</code> 也不一定是 macOS 支持的 locale。</p>
+<h3 id="_14">打开调试日志</h3>
+<p>客户端逐级提高日志级别：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -v ...</span>
+<span class="go">C&gt; ssh -vvv ...</span>
+</code></pre></div>
+
+<p>查看实际生效的客户端配置：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">C&gt; ssh -G host-b-via-a</span>
+</code></pre></div>
+
+<p>服务端检查配置语法和条件配置：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">A&gt; sudo sshd -t</span>
+<span class="go">A&gt; sudo sshd -T -C user=tunnel,host=localhost,addr=127.0.0.1</span>
+</code></pre></div>
+
+<h2 id="_15">停止和清理</h2>
+<p>临时停止 Linux 隧道：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudo systemctl stop reverse-ssh-to-host-a.service</span>
+</code></pre></div>
+
+<p>禁止开机启动但保留服务文件：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudo systemctl disable reverse-ssh-to-host-a.service</span>
+</code></pre></div>
+
+<p>确定不再使用时，先核对路径，再删除 B 的服务、专用 key 和 B 上的本地监听限制：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">B&gt; sudo systemctl disable --now reverse-ssh-to-host-a.service</span>
+<span class="go">B&gt; sudo rm -f /etc/systemd/system/reverse-ssh-to-host-a.service</span>
+<span class="go">B&gt; sudo systemctl daemon-reload</span>
+<span class="go">B&gt; rm -f ~/.ssh/id_ed25519_to_host_a ~/.ssh/id_ed25519_to_host_a.pub</span>
+<span class="go">B&gt; ssh-keygen -R a.example.com</span>
+</code></pre></div>
+
+<p>如果不再需要“B 的 SSH 只监听回环地址”，再删除对应的 drop-in 并重载 SSH；如果仍希望保留这个收紧策略，不要删除它。A 上还应从 <code>/home/tunnel/.ssh/authorized_keys</code> 删除 B 对应的公钥。</p>
+<p>停止 macOS 的用户态 agent：</p>
+<div class="codehilite"><pre><span></span><code><span class="go">macOS&gt; launchctl bootout gui/$(id -u) \</span>
+<span class="go">    &quot;$HOME/Library/LaunchAgents/com.example.reverse-ssh.to-host-a.plist&quot;</span>
+<span class="go">macOS&gt; launchctl bootout gui/$(id -u) \</span>
+<span class="go">    &quot;$HOME/Library/LaunchAgents/com.example.reverse-ssh.local-sshd.plist&quot;</span>
+</code></pre></div>
+
+<p>确认不再需要后，再删除对应 plist、用户态 <code>sshd</code> 配置、日志、key 和授权公钥。A 上也要删除 macOS 对应的 <code>authorized_keys</code> 行，并收回不再使用的 <code>PermitListen</code> 端口。</p>
+<h2 id="_16">参考</h2>
+<ul>
+<li><code>man ssh</code>、<code>man ssh_config</code>、<code>man sshd_config</code>、<code>man authorized_keys</code></li>
+<li><a href="https://man.openbsd.org/ssh">OpenSSH manual pages</a></li>
+<li><a href="https://stackoverflow.com/questions/20079646/is-it-possible-to-chain-from-one-terminal-to-another-via-ssh-in-one-series-of-co">Chain from one SSH terminal to another</a></li>
+<li><a href="https://superuser.com/questions/276533/scp-files-via-intermediate-host">SCP files via an intermediate host</a></li>
+<li><a href="https://stackoverflow.com/questions/10023494/how-to-connect-mysql-database-through-two-ssh-hosts">Connecting to MySQL through two SSH hosts</a></li>
+<li><a href="http://momolog.info/2011/12/02/connect-to-redis-via-ssh-tunneling/">Connect to Redis via SSH tunneling</a></li>
+</ul>
     </div>
     <div id="footer">
       <span>
-        <p>Copyright © 2019 hmgle.
+        <p>Copyright © 2026 hmgle.
         Powered by <a href="http://simiki.org/" target="_blank">Simiki</a>.</p>
-        <p>Site Generated 2019-03-27 22:36:38</p>
+        <p>Site Generated 2026-08-02 09:51:04</p>
       </span>
     </div>
+
+    
+    
   </body>
 </html>

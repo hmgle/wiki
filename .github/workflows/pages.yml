@@ -1,0 +1,79 @@
+name: Build and deploy wiki
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: wiki-pages
+  cancel-in-progress: false
+
+env:
+  SIMIKI3_REQUIREMENT: "simiki3 @ git+https://github.com/hmgle/simiki3.git@b8a1100473e9bd3aafb3e402ef923d45ca93cf24"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: latest
+
+      - name: Verify simiki3
+        run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 --version
+
+      - name: Sync legacy simple2 theme
+        run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 theme sync simple2 --path .
+
+      - name: Build wiki
+        run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 build .
+
+      - name: Check generated site
+        run: |
+          test -s output/index.html
+          test -s output/atom.xml
+          test -s output/static/css/style.css
+          test -s output/static/css/tango.css
+          test -s output/search/sphinx.html
+          test -s output/tip/forwarded_tips.html
+
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: output
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

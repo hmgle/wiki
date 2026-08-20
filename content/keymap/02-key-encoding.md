@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（二）：四层编码"
+title: "Linux 按键体系 02：四层编码"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（九）：复用层 tmux"
+title: "Linux 按键体系 09：复用层 tmux"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

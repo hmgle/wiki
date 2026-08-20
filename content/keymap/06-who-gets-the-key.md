@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（六）：谁先拿到这个键"
+title: "Linux 按键体系 06：谁先拿到这个键"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

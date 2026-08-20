@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（〇）：系列总览"
+title: "Linux 按键体系 00：系列总览"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

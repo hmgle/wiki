@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（一）：一次按键的旅程"
+title: "Linux 按键体系 01：一次按键的旅程"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

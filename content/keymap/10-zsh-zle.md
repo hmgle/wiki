@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（十）：命令行层 zsh ZLE"
+title: "Linux 按键体系 10：命令行层 zsh ZLE"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

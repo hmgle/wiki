@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（十一）：编辑层 Neovim"
+title: "Linux 按键体系 11：编辑层 Neovim"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

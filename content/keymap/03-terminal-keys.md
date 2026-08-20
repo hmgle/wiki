@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（三）：终端里的按键"
+title: "Linux 按键体系 03：终端里的按键"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

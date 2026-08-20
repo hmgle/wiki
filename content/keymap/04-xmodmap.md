@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（四）：xmodmap 三层模型"
+title: "Linux 按键体系 04：xmodmap 三层模型"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（八）：终端层 WezTerm"
+title: "Linux 按键体系 08：终端层 WezTerm"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

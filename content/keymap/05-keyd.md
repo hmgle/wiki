@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（五）：到内核层重塑键盘"
+title: "Linux 按键体系 05：到内核层重塑键盘"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

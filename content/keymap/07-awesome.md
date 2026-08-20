@@ -1,5 +1,5 @@
 ---
-title: "Linux 按键体系（七）：窗口层的克制"
+title: "Linux 按键体系 07：窗口层的克制"
 layout: page
 date: 2026-08-20
 updated: 2026-08-20

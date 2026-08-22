@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SIMIKI3_REQUIREMENT: "simiki3 @ git+https://github.com/hmgle/simiki3.git@b8a1100473e9bd3aafb3e402ef923d45ca93cf24"
+  SIMIKI3_REQUIREMENT: "simiki3 @ git+https://github.com/hmgle/simiki3.git@cec285cde055be33109f7870b7fb14ffacd9d468"
 
 jobs:
   build:

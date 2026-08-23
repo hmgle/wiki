@@ -31,7 +31,7 @@ a:visited { color: #0645ad; }
 a:hover { color: #06e; }
 a:active { color: #06e; }
 
-p { margin: 0 0 1.5em 0; text-align: justify; }
+p { margin: 0 0 1.5em 0; }
 
 h1, h2, h3, h4, h5, h6 {
     font-weight: normal;

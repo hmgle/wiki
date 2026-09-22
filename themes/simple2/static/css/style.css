@@ -192,13 +192,15 @@ li.pagelist:before {
 
 /* Table of Contents */
 .toc {
-    margin: 0 0.5em;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0 0 1.5em 0;
     padding: 0.5em 1em;
     border: 1px solid silver;
     background-color: #ecf5ff;
-    float: right;
     display: block;
     font-size: 90%;
+    overflow: auto;
 }
 
 .toc > .toctitle {
@@ -210,6 +212,19 @@ li.pagelist:before {
 
 .toc ul {
     margin: 0;
+}
+
+/* Wide screens: pin the TOC to a sidebar beside the article so long
+   tables of contents never squeeze the body text into a narrow column. */
+@media (min-width: 82em) {
+    .toc {
+        position: fixed;
+        top: 2.5em;
+        left: min(calc((100vw + 54em) / 2 + 1em), calc(100vw - 14em));
+        width: 13em;
+        max-height: calc(100vh - 5em);
+        margin: 0;
+    }
 }
 
 /* Hackers */

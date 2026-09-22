@@ -128,6 +128,7 @@ pre code {
 #container {
     background: white;
     width: 50em;
+    position: relative;
     line-height: 1.5em;
     margin: 1.5em auto 3em auto;
     padding: 1.5em 2em;
@@ -214,13 +215,14 @@ li.pagelist:before {
     margin: 0;
 }
 
-/* Wide screens: pin the TOC to a sidebar beside the article so long
-   tables of contents never squeeze the body text into a narrow column. */
+/* Wide screens: place the TOC in the gutter beside the article so long
+   tables of contents never squeeze the body text into a narrow column,
+   while the sidebar still scrolls naturally with the page. */
 @media (min-width: 82em) {
     .toc {
-        position: fixed;
-        top: 2.5em;
-        left: min(calc((100vw + 54em) / 2 + 1em), calc(100vw - 14em));
+        position: absolute;
+        top: 0;
+        left: calc(100% + 1em);
         width: 13em;
         max-height: calc(100vh - 5em);
         margin: 0;

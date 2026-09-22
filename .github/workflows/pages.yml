@@ -37,7 +37,7 @@ jobs:
         run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 --version
 
       - name: Sync legacy simple2 theme
-        run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 theme sync simple2 --path .
+        run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 theme sync simple2 --path . --force
 
       - name: Build wiki
         run: uv run --isolated --with "$SIMIKI3_REQUIREMENT" simiki3 build .

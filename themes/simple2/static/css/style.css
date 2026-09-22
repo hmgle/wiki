@@ -215,14 +215,15 @@ li.pagelist:before {
     margin: 0;
 }
 
-/* Wide screens: place the TOC in the gutter beside the article so long
-   tables of contents never squeeze the body text into a narrow column,
-   while the sidebar still scrolls naturally with the page. */
+/* Wide screens: keep the TOC in the gutter and visible while scrolling.
+   The pixel offset tracks the centered article's actual outer half-width;
+   viewport units include the scrollbar and can overlap the article. */
 @media (min-width: 82em) {
     .toc {
-        position: absolute;
+        position: fixed;
         top: 0;
-        left: calc(100% + 1em);
+        top: 2.5em;
+        left: calc(50% + 380px + 1em);
         width: 13em;
         max-height: calc(100vh - 5em);
         margin: 0;
